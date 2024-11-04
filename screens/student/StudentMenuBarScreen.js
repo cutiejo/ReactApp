@@ -2,19 +2,21 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, TextInput, Modal } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Create the bottom tab navigator
+// Bottom tab navigator
 const Tab = createBottomTabNavigator();
 
 const StudentMenuBarScreen = ({ navigation }) => {
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
-  const openLogoutModal = () => {
-    setLogoutModalVisible(true);
-  };
+  const openLogoutModal = () => setLogoutModalVisible(true);
+  const closeLogoutModal = () => setLogoutModalVisible(false);
 
-  const closeLogoutModal = () => {
-    setLogoutModalVisible(false);
+  const handleLogout = async () => {
+    await AsyncStorage.clear();
+    closeLogoutModal();
+    navigation.replace('Login');
   };
 
   return (
@@ -22,11 +24,7 @@ const StudentMenuBarScreen = ({ navigation }) => {
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Icon name="magnify" size={25} color="#888" />
-        <TextInput
-          placeholder="Search.."
-          placeholderTextColor="#888"
-          style={styles.searchInput}
-        />
+        <TextInput placeholder="Search.." placeholderTextColor="#888" style={styles.searchInput} />
       </View>
 
       <View style={styles.grid}>
@@ -40,7 +38,6 @@ const StudentMenuBarScreen = ({ navigation }) => {
           <Text style={styles.menuText}>ANNOUNCEMENT</Text>
         </TouchableOpacity>
 
-        {/* Replace RFID Logs with School Calendar */}
         <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('StudentSchoolCalendarScreen')}>
           <Image source={require('../../assets/calendar.png')} style={styles.iconImage} />
           <Text style={styles.menuText}>SCHOOL CALENDAR</Text>
@@ -63,12 +60,7 @@ const StudentMenuBarScreen = ({ navigation }) => {
       </View>
 
       {/* Logout Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={logoutModalVisible}
-        onRequestClose={closeLogoutModal}
-      >
+      <Modal animationType="slide" transparent visible={logoutModalVisible} onRequestClose={closeLogoutModal}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Log out</Text>
@@ -77,10 +69,7 @@ const StudentMenuBarScreen = ({ navigation }) => {
               <TouchableOpacity style={styles.cancelButton} onPress={closeLogoutModal}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.logoutButton} onPress={() => {
-                closeLogoutModal();
-                navigation.navigate('Login');
-              }}>
+              <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                 <Text style={styles.logoutButtonText}>Log out</Text>
               </TouchableOpacity>
             </View>
@@ -91,7 +80,7 @@ const StudentMenuBarScreen = ({ navigation }) => {
   );
 };
 
-// Bottom Tab Navigation for consistency with StudentDashboard
+// Bottom Tab Navigation
 function TabNavigator() {
   return (
     <Tab.Navigator
@@ -103,28 +92,28 @@ function TabNavigator() {
     >
       <Tab.Screen
         name="Home"
-        component={MenuBarScreen}
+        component={StudentMenuBarScreen}
         options={{
           tabBarIcon: ({ color }) => <Icon name="home-outline" size={24} color={color} />,
         }}
       />
       <Tab.Screen
         name="Notifications"
-        component={MenuBarScreen}
+        component={NotificationsScreen} // Define this component separately
         options={{
           tabBarIcon: ({ color }) => <Icon name="bell-outline" size={24} color={color} />,
         }}
       />
       <Tab.Screen
         name="Messages"
-        component={MenuBarScreen}
+        component={MessagesScreen} // Define this component separately
         options={{
           tabBarIcon: ({ color }) => <Icon name="message-outline" size={24} color={color} />,
         }}
       />
       <Tab.Screen
         name="Profile"
-        component={MenuBarScreen}
+        component={StudentProfileScreen} // Define this component separately
         options={{
           tabBarIcon: ({ color }) => <Icon name="account-outline" size={24} color={color} />,
         }}
@@ -132,6 +121,9 @@ function TabNavigator() {
     </Tab.Navigator>
   );
 }
+
+// Define other screen components such as NotificationsScreen, MessagesScreen, and StudentProfileScreen
+// ...
 
 const styles = StyleSheet.create({
   container: {
@@ -164,7 +156,7 @@ const styles = StyleSheet.create({
   },
   menuItem: {
     width: '48%',
-    backgroundColor: '#ffff', // Light background for the buttons
+    backgroundColor: '#ffff',
     padding: 20,
     alignItems: 'center',
     marginVertical: 10,
@@ -178,7 +170,7 @@ const styles = StyleSheet.create({
   menuText: {
     textAlign: 'center',
     fontWeight: 'bold',
-    color: '#137e5e', // Dark green text color to match the icons
+    color: '#137e5e',
   },
   modalContainer: {
     flex: 1,

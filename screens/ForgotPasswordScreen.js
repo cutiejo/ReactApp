@@ -1,15 +1,37 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const navigation = useNavigation();
 
-  const handleSendEmail = () => {
-    // Navigate to the VerificationSent screen
-    navigation.navigate('VerificationSentScreen');
-  };
+  const handleSendEmail = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email.');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://192.168.68.115/Capstone/api/forgot_password.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+              // Navigate to VerificationSentScreen after successful email send
+              navigation.navigate('VerificationSentScreen');
+            } else {
+              Alert.alert("Error", "Something went wrong.");
+            }
+          } catch (error) {
+            Alert.alert("Error", "Network request failed.");
+          }
+        };
 
   return (
     <View style={styles.container}>

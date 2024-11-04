@@ -1,12 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
 
 const StudentLogoutScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
+  const navigation = useNavigation();
 
-  const handleLogout = () => {
-    // Add your logout functionality here
-    setModalVisible(false);
+  const handleLogout = async () => {
+    try {
+      // Clear session data from AsyncStorage
+      await AsyncStorage.removeItem('userSession');
+
+      // Close modal and navigate to Login screen
+      setModalVisible(false);
+      navigation.replace('Login');
+    } catch (error) {
+      console.error("Error logging out:", error);
+      Alert.alert("Error", "Failed to log out. Please try again.");
+    }
   };
 
   return (
@@ -67,7 +79,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Semi-transparent background
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalContainer: {
     width: '80%',

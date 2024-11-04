@@ -1,58 +1,87 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ParentsInformationScreen = () => {
+  const [parentData, setParentData] = useState(null);
+
+  useEffect(() => {
+    const fetchParentInfo = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+        const user = session ? JSON.parse(session) : null;
+
+        if (user && user.user_id) {
+          const response = await axios.get('http://192.168.1.12/Capstone/api/get_parents_info.php', {
+            params: { user_id: user.user_id },
+          });
+
+          if (response.data.status) {
+            setParentData(response.data.parents);
+          } else {
+            Alert.alert("Error", response.data.message || "Failed to load parents' information.");
+          }
+        } else {
+          Alert.alert("Error", "User session not found. Please log in again.");
+        }
+      } catch (error) {
+        console.error("Error fetching parents' info:", error);
+        Alert.alert("Error", "Failed to load parents' information.");
+      }
+    };
+
+    fetchParentInfo();
+  }, []);
+
+  if (!parentData) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading parent information...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       {/* Header Section */}
       <View style={styles.header}>
         <Text style={styles.title}>Parents Information</Text>
       </View>
-      
-      {/* Parent/Guardian 1 Information */}
+
+      {/* Parent/Guardian Information */}
       <View style={styles.content}>
-        <View style={styles.sectionHeader}>
-          <Icon name="account" size={24} color="#1F5D50" />
-          <Text style={styles.sectionTitle}>Parent/Guardian 1</Text>
-        </View>
-        <Text style={styles.label}>Name:</Text>
-        <Text style={styles.value}>Jane Doe</Text>
+        {Object.keys(parentData).map((key) => {
+          const guardian = parentData[key];
+          return (
+            <View key={key}>
+              <View style={styles.sectionHeader}>
+                <Icon name="account" size={24} color="#1F5D50" />
+                <Text style={styles.sectionTitle}>{key.replace('_', ' ')}</Text>
+              </View>
+              <Text style={styles.label}>Name:</Text>
+              <Text style={styles.value}>{guardian.name || 'N/A'}</Text>
 
-        <Text style={styles.label}>Phone Number:</Text>
-        <View style={styles.row}>
-          <Icon name="phone" size={18} color="#137e5e" />
-          <Text style={styles.value}>+1 234 567 890</Text>
-        </View>
+              <Text style={styles.label}>Phone Number:</Text>
+              <View style={styles.row}>
+                <Icon name="phone" size={18} color="#137e5e" />
+                <Text style={styles.value}>{guardian.phone || 'N/A'}</Text>
+              </View>
 
-        <Text style={styles.label}>Email:</Text>
-        <View style={styles.row}>
-          <Icon name="email" size={18} color="#137e5e" />
-          <Text style={styles.value}>janedoe@example.com</Text>
-        </View>
-        
-        {/* Divider */}
-        <View style={styles.divider} />
-        
-        {/* Parent/Guardian 2 Information */}
-        <View style={styles.sectionHeader}>
-          <Icon name="account" size={24} color="#1F5D50" />
-          <Text style={styles.sectionTitle}>Parent/Guardian 2</Text>
-        </View>
-        <Text style={styles.label}>Name:</Text>
-        <Text style={styles.value}>John Doe</Text>
+              <Text style={styles.label}>Email:</Text>
+              <View style={styles.row}>
+                <Icon name="email" size={18} color="#137e5e" />
+                <Text style={styles.value}>{guardian.email || 'N/A'}</Text>
+              </View>
 
-        <Text style={styles.label}>Phone Number:</Text>
-        <View style={styles.row}>
-          <Icon name="phone" size={18} color="#137e5e" />
-          <Text style={styles.value}>+1 987 654 321</Text>
-        </View>
+              <Text style={styles.label}>Address:</Text>
+              <Text style={styles.value}>{guardian.address || 'N/A'}</Text>
 
-        <Text style={styles.label}>Email:</Text>
-        <View style={styles.row}>
-          <Icon name="email" size={18} color="#137e5e" />
-          <Text style={styles.value}>johndoe@example.com</Text>
-        </View>
+              <View style={styles.divider} />
+            </View>
+          );
+        })}
       </View>
     </ScrollView>
   );

@@ -1,32 +1,83 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList, Image } from 'react-native';
-
-const notificationsData = [
-  { id: '1', icon: require('../../assets/sv_logo.png'), title: 'Testing.', date: '24 Feb' },
-  { id: '2', icon: require('../../assets/google-icon.png'), title: 'Sample Notification only.', date: '15 Jan' },
-];
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Image, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const StudentNotificationScreen = ({ navigation }) => {
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    const fetchUserNotifications = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+        const user = session ? JSON.parse(session) : null;
+
+        if (user && user.user_id) {
+          fetchNotifications(user.user_id);
+        } else {
+          Alert.alert("Error", "User session not found. Please log in again.");
+          navigation.replace('Login');
+        }
+      } catch (error) {
+        console.error("Error retrieving user session:", error);
+        Alert.alert("Error", "Failed to retrieve user session.");
+      }
+    };
+
+    fetchUserNotifications();
+  }, []);
+
+  const fetchNotifications = async (user_id) => {
+    try {
+      const response = await axios.get('http://192.168.1.12/Capstone/api/get_notifications.php', {
+        params: { user_id },
+      });
+      setNotifications(response.data.notifications || []);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      Alert.alert("Error", "Failed to fetch notifications");
+    }
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      const session = await AsyncStorage.getItem('userSession');
+      const user = session ? JSON.parse(session) : null;
+
+      if (user && user.user_id) {
+        await axios.post('http://192.168.1.12/Capstone/api/mark_notifications_as_read.php', {
+          user_id: user.user_id,
+        });
+        Alert.alert("Success", "All notifications marked as read");
+        fetchNotifications(user.user_id); // Refresh the notifications list
+      }
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+      Alert.alert("Error", "Failed to mark notifications as read");
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Notifications</Text>
-        <TouchableOpacity onPress={() => alert('Marked as Read')}>
+        <TouchableOpacity onPress={markAllAsRead}>
           <Text style={styles.markReadText}>Mark as Read</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Notification List */}
       <FlatList
-        data={notificationsData}
-        keyExtractor={(item) => item.id}
+        data={notifications}
+        keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.notification}>
-            <Image source={item.icon} style={styles.icon} />
+          <TouchableOpacity
+            style={styles.notification}
+            onPress={() => navigation.navigate('NotificationDetail', { notification: item })}
+          >
+            <Image source={require('../../assets/sv_logo.png')} style={styles.icon} />
             <View style={styles.notificationInfo}>
-              <Text style={styles.notificationTitle}>{item.title}</Text>
-              <Text style={styles.date}>{item.date}</Text>
+              <Text style={styles.notificationTitle}>{item.message}</Text>
+              <Text style={styles.date}>{item.created_at}</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -45,7 +96,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 60, // Adjusted margin for a compact layout
+    marginVertical: 60,
   },
   title: {
     fontSize: 24,
@@ -60,7 +111,7 @@ const styles = StyleSheet.create({
   notification: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f4f4f4', // Light grey background for each notification
+    backgroundColor: '#f4f4f4',
     padding: 15,
     borderRadius: 10,
     marginBottom: 10,

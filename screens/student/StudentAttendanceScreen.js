@@ -1,14 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import moment from 'moment';
 
 export default function AttendanceScreen() {
-  const [attendanceData, setAttendanceData] = useState([
-    { id: 1, date: '2024-09-23', status: 'Present' },
-    { id: 2, date: '2024-09-24', status: 'Late' },
-    { id: 3, date: '2024-09-25', status: 'Absent' },
-    { id: 4, date: '2024-09-26', status: 'Present' },
-  ]);
+  const [attendanceData, setAttendanceData] = useState([]);
+  const [statusCounts, setStatusCounts] = useState({ Present: 0, Late: 0, Absent: 0 });
+
+  useEffect(() => {
+    const fetchAttendanceData = async () => {
+      try {
+        // Retrieve user session from AsyncStorage
+        const session = await AsyncStorage.getItem('userSession');
+        const user = session ? JSON.parse(session) : null;
+
+        if (user && user.user_id) {
+          const response = await axios.get('http://192.168.1.12/Capstone/api/get_attendance.php', {
+            params: { user_id: user.user_id },
+          });
+
+          const data = response.data;
+          setAttendanceData(data);
+          calculateStatusCounts(data);
+        } else {
+          Alert.alert("Error", "User session not found. Please log in again.");
+        }
+      } catch (error) {
+        console.error('Error fetching attendance data:', error);
+        Alert.alert("Error", "Failed to fetch attendance data.");
+      }
+    };
+
+    fetchAttendanceData();
+  }, []);
+
+  const calculateStatusCounts = (data) => {
+    const counts = { Present: 0, Late: 0, Absent: 0 };
+    data.forEach((item) => {
+      if (counts[item.status] !== undefined) {
+        counts[item.status] += 1;
+      }
+    });
+    setStatusCounts(counts);
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -23,28 +59,21 @@ export default function AttendanceScreen() {
     }
   };
 
-  useEffect(() => {
-    // You would typically fetch this from your backend API
-    // Example: setAttendanceData(response.data);
-  }, []);
-
   return (
     <View style={styles.container}>
-      {/* Title */}
       <Text style={styles.title}>Attendance</Text>
 
-      {/* Status Cards */}
       <View style={styles.statusCardsContainer}>
         <View style={[styles.statusCard, { borderLeftColor: '#4CAF50' }]}>
-          <Text style={[styles.statusCount, { color: '#4CAF50' }]}>8</Text>
+          <Text style={[styles.statusCount, { color: '#4CAF50' }]}>{statusCounts.Present}</Text>
           <Text style={styles.statusLabel}>Present</Text>
         </View>
         <View style={[styles.statusCard, { borderLeftColor: '#F44336' }]}>
-          <Text style={[styles.statusCount, { color: '#F44336' }]}>1</Text>
+          <Text style={[styles.statusCount, { color: '#F44336' }]}>{statusCounts.Absent}</Text>
           <Text style={styles.statusLabel}>Absent</Text>
         </View>
         <View style={[styles.statusCard, { borderLeftColor: '#FF9800' }]}>
-          <Text style={[styles.statusCount, { color: '#FF9800' }]}>4</Text>
+          <Text style={[styles.statusCount, { color: '#FF9800' }]}>{statusCounts.Late}</Text>
           <Text style={styles.statusLabel}>Late</Text>
         </View>
       </View>
@@ -57,7 +86,7 @@ export default function AttendanceScreen() {
             <View key={item.id} style={styles.card}>
               <View style={styles.cardHeader}>
                 <Icon name="calendar-blank-outline" size={20} color="#137e5e" />
-                <Text style={styles.cardDate}>{item.date}</Text>
+                <Text style={styles.cardDate}>{moment(item.date).format('MMMM D, YYYY')}</Text>
               </View>
               <View style={styles.cardBody}>
                 <Icon name="check-circle-outline" size={24} color={getStatusColor(item.status)} />
@@ -101,7 +130,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    borderLeftWidth: 5, // Border on the left to match the desired design
+    borderLeftWidth: 5,
   },
   statusCount: {
     fontSize: 24,

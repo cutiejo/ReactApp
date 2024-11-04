@@ -1,74 +1,236 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Modal, Pressable, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Modal, Pressable, ScrollView, Image, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 
-const StudentEditProfileScreen = () => {
-  const [isPasswordVisible, setPasswordVisible] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false); // State to control the modal visibility
+const StudentEditProfileScreen = ({ navigation }) => {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
+  const [profile, setProfile] = useState({
+    user_id: '',
+    full_name: '',
+    address: '',
+    guardian: '',
+    parent_full_name: '', // New field for parent name
+    sex: '',
+    birth_date: '',
+    lrn: '',
+    rfid_uid: '',
+    email: ''
+  });
 
-  const togglePasswordVisibility = () => {
-    setPasswordVisible(!isPasswordVisible);
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+        const user = session ? JSON.parse(session) : null;
+
+        if (user && user.user_id) {
+          const response = await axios.get('http://192.168.1.12/Capstone/api/get_profile.php', {
+            params: { user_id: user.user_id },
+          });
+
+          if (response.data.status) {
+            const studentData = response.data.student;
+            setProfile({ ...profile, ...studentData });
+            setProfileImage(
+              studentData.image
+                ? { uri: `http://192.168.1.12/Capstone/${studentData.image}` }
+                : require('../../assets/profile_placeholder.png')
+            );
+          } else {
+            Alert.alert("Error", response.data.message || "Profile data not found.");
+          }
+        } else {
+          Alert.alert("Error", "User session not found. Please log in again.");
+          navigation.navigate('Login');
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+        Alert.alert("Error", "Failed to retrieve profile information.");
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  const handleSaveChanges = async () => {
+    const formData = new FormData();
+    formData.append('user_id', profile.user_id);
+    formData.append('full_name', profile.full_name);
+    formData.append('address', profile.address);
+    formData.append('birth_date', profile.birth_date);
+    formData.append('parent_full_name', profile.parent_full_name); // Send parent name to the API
+    formData.append('sex', profile.sex);
+
+    if (profileImage && profileImage.uri) {
+      formData.append('image', {
+        uri: profileImage.uri,
+        name: `profile_${profile.user_id}.jpg`,
+        type: 'image/jpeg',
+      });
+    }
+
+    try {
+      const response = await axios.post('http://192.168.1.12/Capstone/api/update_student.php', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (response.data.status) {
+        setModalVisible(true);
+      } else {
+        Alert.alert("Error", response.data.message || "Failed to update profile.");
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      Alert.alert("Error", "Failed to save profile changes.");
+    }
   };
 
-  const handleSaveChanges = () => {
-    setModalVisible(true); // Show the modal when Save Changes is clicked
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert("Permission Denied", "Sorry, we need camera roll permissions to make this work!");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 1,
+      });
+
+      if (!result.canceled) {
+        setProfileImage({ uri: result.uri });
+      }
+    } catch (error) {
+      console.error("Image Picker Error:", error);
+      Alert.alert("Error", "Failed to open image picker.");
+    }
+  };
+
+  const handleNonEditableField = (fieldName) => {
+    Alert.alert("Non-Editable Field", `${fieldName} cannot be changed. Please contact admin.`);
+  };
+
+  const handleDateConfirm = (date) => {
+    setDatePickerVisibility(false);
+    setProfile({ ...profile, birth_date: date.toISOString().split('T')[0] });
   };
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Edit Profile</Text>
-        <View style={styles.profileImageContainer}>
-          <Icon name="account-circle" size={80} color="#ccc" />
-        </View>
+        <TouchableOpacity onPress={pickImage}>
+          <View style={styles.profileImageContainer}>
+            <Image
+              source={profileImage || require('../../assets/profile_placeholder.png')}
+              style={styles.profileImage}
+            />
+            <Icon name="camera-plus" size={24} color="#fff" style={styles.cameraIcon} />
+          </View>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.form}>
         <Text style={styles.label}>Full Name</Text>
-        <TextInput style={styles.input} placeholder="John Vic" />
+        <TextInput
+          style={styles.input}
+          value={profile.full_name}
+          onChangeText={(text) => setProfile({ ...profile, full_name: text })}
+        />
+
+        
 
         <Text style={styles.label}>LRN</Text>
-        <TextInput style={styles.input} placeholder="20211-213" />
-
-        <Text style={styles.label}>Student ID</Text>
-        <TextInput style={styles.input} placeholder="#12321" />
+        <TextInput
+          style={[styles.input, styles.nonEditable]}
+          value={profile.lrn}
+          editable={false}
+          onPressIn={() => handleNonEditableField("LRN")}
+        />
 
         <Text style={styles.label}>RFID Number</Text>
-        <TextInput style={styles.input} placeholder="0912321" />
+        <TextInput
+          style={[styles.input, styles.nonEditable]}
+          value={profile.rfid_uid}
+          editable={false}
+          onPressIn={() => handleNonEditableField("RFID Number")}
+        />
 
         <Text style={styles.label}>Email</Text>
-        <TextInput style={styles.input} placeholder="john@gmail.com" />
+        <TextInput
+          style={[styles.input, styles.nonEditable]}
+          value={profile.email}
+          editable={false}
+          onPressIn={() => handleNonEditableField("Email")}
+        />
 
         <Text style={styles.label}>Date of Birth</Text>
-        <TextInput style={styles.input} placeholder="11/08/2017" />
-
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.passwordContainer}>
+        <TouchableOpacity style={styles.dateInput} onPress={() => setDatePickerVisibility(true)}>
           <TextInput
-            style={styles.passwordInput}
-            placeholder="**********"
-            secureTextEntry={!isPasswordVisible}
+            style={styles.input}
+            value={profile.birth_date}
+            placeholder="Select Date"
+            editable={false}
           />
-          <TouchableOpacity onPress={togglePasswordVisibility}>
-            <Icon
-              name={isPasswordVisible ? 'eye' : 'eye-off'}
-              size={24}
-              color="#888"
-            />
-          </TouchableOpacity>
-        </View>
+          <Icon name="calendar" size={20} color="#757575" style={styles.dateIcon} />
+        </TouchableOpacity>
+        <DateTimePickerModal
+          isVisible={isDatePickerVisible}
+          mode="date"
+          onConfirm={handleDateConfirm}
+          onCancel={() => setDatePickerVisibility(false)}
+        />
 
         <Text style={styles.label}>Address</Text>
-        <TextInput style={styles.input} placeholder="Yaounde, Cameroon" />
+        <TextInput
+          style={styles.input}
+          value={profile.address}
+          onChangeText={(text) => setProfile({ ...profile, address: text })}
+        />
 
+       <Text style={styles.label}>Guardian</Text>
+        <TextInput
+          style={[styles.input, styles.nonEditable]}
+          value={profile.parent_full_name}
+          onChangeText={(text) => setProfile({ ...profile, parent_full_name: text })}
+          editable={false}
+          onPressIn={() => handleNonEditableField("Registered Parent")}
+        />
+          
+      
+
+        {/* Gender Selection */}
         <Text style={styles.label}>Gender</Text>
         <View style={styles.genderContainer}>
-          <TouchableOpacity style={styles.genderOption}>
-            <Icon name="radiobox-marked" size={20} color="#137e5e" />
+          <TouchableOpacity 
+            onPress={() => setProfile({ ...profile, sex: 'male' })} 
+            style={[
+              styles.genderOption, 
+              profile.sex === 'male' && styles.genderOptionSelected
+            ]}
+          >
+            <Icon name={profile.sex === 'male' ? "radiobox-marked" : "radiobox-blank"} size={20} color="#137e5e" />
             <Text style={styles.genderLabel}>Male</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.genderOption}>
-            <Icon name="radiobox-blank" size={20} color="#137e5e" />
+          <TouchableOpacity 
+            onPress={() => setProfile({ ...profile, sex: 'female' })} 
+            style={[
+              styles.genderOption, 
+              profile.sex === 'female' && styles.genderOptionSelected
+            ]}
+          >
+            <Icon name={profile.sex === 'female' ? "radiobox-marked" : "radiobox-blank"} size={20} color="#137e5e" />
             <Text style={styles.genderLabel}>Female</Text>
           </TouchableOpacity>
         </View>
@@ -78,7 +240,6 @@ const StudentEditProfileScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Modal for Update Success */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -100,6 +261,7 @@ const StudentEditProfileScreen = () => {
   );
 };
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -120,6 +282,25 @@ const styles = StyleSheet.create({
   profileImageContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 20,
+    position: 'relative',
+    borderWidth: 3,
+    borderColor: '#137e5e',
+    borderRadius: 55,
+    padding: 5,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  cameraIcon: {
+    position: 'absolute',
+    bottom: 0,
+    right: -5,
+    backgroundColor: '#137e5e',
+    borderRadius: 15,
+    padding: 4,
   },
   form: {
     paddingHorizontal: 20,
@@ -129,6 +310,14 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     color: '#757575',
   },
+  dateInput: {
+    position: 'relative',
+  },
+  dateIcon: {
+    position: 'absolute',
+    right: 10,
+    top: 15,
+  },
   input: {
     backgroundColor: '#fff',
     padding: 12,
@@ -137,19 +326,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 15,
   },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    paddingRight: 10,
-    marginBottom: 15,
-  },
-  passwordInput: {
-    flex: 1,
-    padding: 12,
+  nonEditable: {
+    backgroundColor: '#f0f0f0',
+    color: '#999',
   },
   genderContainer: {
     flexDirection: 'row',
@@ -159,6 +338,10 @@ const styles = StyleSheet.create({
   genderOption: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  genderOptionSelected: {
+    backgroundColor: '#f0f0f0', // Background for selected gender
+    borderRadius: 5,
   },
   genderLabel: {
     marginLeft: 5,

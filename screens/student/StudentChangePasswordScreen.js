@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const StudentChangePasswordScreen = () => {
   const [oldPassword, setOldPassword] = useState('');
@@ -11,9 +13,36 @@ const StudentChangePasswordScreen = () => {
   const [isConfirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
 
-  const handleChangePassword = () => {
-    // Logic to change the password goes here
-    setModalVisible(true); // Simulating success for modal
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "New password and confirm password do not match.");
+      return;
+    }
+
+    try {
+      const session = await AsyncStorage.getItem('userSession');
+      const user = session ? JSON.parse(session) : null;
+
+      if (!user || !user.user_id) {
+        Alert.alert("Error", "User session not found. Please log in again.");
+        return;
+      }
+
+      const response = await axios.post('http://192.168.1.12/Capstone/api/update_password.php', {
+        user_id: user.user_id,
+        old_password: oldPassword,
+        new_password: newPassword
+      });
+
+      if (response.data.status) {
+        setModalVisible(true); // Show success modal
+      } else {
+        Alert.alert("Error", response.data.message || "Password update failed.");
+      }
+    } catch (error) {
+      console.error("Password update error:", error);
+      Alert.alert("Error", "Failed to update password. Please try again later.");
+    }
   };
 
   const closeModal = () => {

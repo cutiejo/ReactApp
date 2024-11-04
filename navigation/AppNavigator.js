@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
+
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -10,16 +13,26 @@ import ExploreScreen from '../screens/ExploreScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import StudentDashboard from '../screens/student/StudentDashboard';
+
+
+
 import ParentDashboard from '../screens/parent/ParentDashboard';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import VerificationSentScreen from '../screens/VerificationSentScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 
+
+
+
 // Student Screens
 import StudentNotificationsScreen from '../screens/student/StudentNotificationsScreen';
+import NotificationDetailScreen from '../screens/student/NotificationDetailScreen';
 import StudentMessagesScreen from '../screens/student/StudentMessagesScreen';
 import StudentProfileScreen from '../screens/student/StudentProfileScreen';
 import StudentAnnouncementsScreen from '../screens/student/StudentAnnouncementsScreen';
+import StudentAnnouncementDetailScreen from '../screens/student/StudentAnnouncementDetailScreen';
+
+
 import StudentMenuBarScreen from '../screens/student/StudentMenuBarScreen';
 import StudentChangePasswordScreen from '../screens/student/StudentChangePasswordScreen';
 import StudentAboutScreen from '../screens/student/StudentAboutScreen';
@@ -155,6 +168,11 @@ function StudentStack() {
       <Stack.Screen name="StudentAttendanceScreen" component={StudentAttendanceScreen} />
       <Stack.Screen name="StudentTimesheetScreen" component={StudentTimesheetScreen} />
       <Stack.Screen name="StudentAnnouncementsScreen" component={StudentAnnouncementsScreen} />
+      <Stack.Screen name="StudentAnnouncementDetail" component={StudentAnnouncementDetailScreen} />
+
+      <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen} options={{ title: 'Notification Details' }} />
+
+
       <Stack.Screen name="StudentSchoolCalendarScreen" component={StudentSchoolCalendarScreen} />
       <Stack.Screen name="StudentProfileScreen" component={StudentProfileScreen} />
       <Stack.Screen name="StudentEditProfileScreen" component={StudentEditProfileScreen} />
@@ -185,7 +203,7 @@ function ParentStack() {
       <Stack.Screen name="ParentSchoolCalendarScreen" component={ParentSchoolCalendarScreen} />
       <Stack.Screen name="ParentChangePasswordScreen" component={ParentChangePasswordScreen} />
       <Stack.Screen name="ParentAboutScreen" component={ParentAboutScreen} />
-      
+
     </Stack.Navigator>
   );
 }
@@ -193,6 +211,21 @@ function ParentStack() {
 // Main App Navigator
 export default function AppNavigator() {
   const [userType, setUserType] = useState(null); // Track user type
+
+  useEffect(() => {
+    const checkUserSession = async () => {
+      const userSession = await AsyncStorage.getItem('userSession');
+      if (userSession) {
+        const parsedSession = JSON.parse(userSession);
+        if (parsedSession.role === 'student') {
+          setUserType('student');
+        } else if (parsedSession.role === 'parent') {
+          setUserType('parent');
+        }
+      }
+    };
+    checkUserSession();
+  }, []);
 
   return (
     <NavigationContainer>
@@ -203,17 +236,23 @@ export default function AppNavigator() {
         </Stack.Screen>
         <Stack.Screen name="Register" component={RegisterScreen} />
 
-        {/* Always include both stack navigators */}
-        <Stack.Screen name="StudentStack" component={StudentStack} options={{ headerShown: false }} />
-        <Stack.Screen name="ParentStack" component={ParentStack} options={{ headerShown: false }} />
+        {/* Conditionally render student or parent stack based on userType */}
+        {userType === 'student' && (
+          <Stack.Screen name="StudentStack" component={StudentStack} options={{ headerShown: false }} />
+        )}
+        {userType === 'parent' && (
+          <Stack.Screen name="ParentStack" component={ParentStack} options={{ headerShown: false }} />
+        )}
+ 
 
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-        <Stack.Screen name="VerificationSent" component={VerificationSentScreen} />
+        <Stack.Screen name="VerificationSentScreen" component={VerificationSentScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
 
 // Styles for Logout Modal
 const styles = StyleSheet.create({

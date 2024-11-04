@@ -1,31 +1,60 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 
 const StudentAnnouncementsScreen = ({ navigation }) => {
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('http://192.168.1.12/Capstone/api/get_announcements.php')
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.json();
+      })
+      .then(data => {
+        setAnnouncements(data);
+        setLoading(false); // Stop loading indicator
+      })
+      .catch(error => {
+        console.error('Error fetching announcements:', error);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return <ActivityIndicator size="large" color="#0000ff" />;
+  }
+
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Announcement</Text>
-      
-      {/* Announcement Cards */}
-      <TouchableOpacity style={styles.card}>
-        <Image source={require('../../assets/school_building.png')} style={styles.image} />
-        <Text style={styles.cardText}>WE WILL LAUNCH SOON!</Text>
-      </TouchableOpacity>
+      <Text style={styles.title}>Announcements</Text>
+      {announcements && announcements.length > 0 ? (
+        announcements.map(announcement => (
+          <TouchableOpacity
+            key={announcement.id}
+            style={styles.card}
+            onPress={() => navigation.navigate('StudentAnnouncementDetail', {
+              title: announcement.title,
+              content: announcement.content,
+              posting_date: announcement.posting_date,
+              image: announcement.image
+              })
+            }
+          >
+            <Image
+              source={{ uri: `http://192.168.1.12/Capstone/uploads/${announcement.image}` }}
+              style={styles.image}
+            />
+            <Text style={styles.cardText}>{announcement.title}</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity style={styles.card}>
-        <Image source={require('../../assets/school_kids.png')} style={styles.image} />
-        <Text style={styles.cardText}>Are you ready to go back to school?</Text>
-      </TouchableOpacity>
 
-      <TouchableOpacity style={styles.card}>
-        <Image source={require('../../assets/sv_logo.png')} style={styles.image} />
-        <Text style={styles.cardText}>SCHOOL LOGO</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.card}>
-        <Image source={require('../../assets/school_building.png')} style={styles.image} />
-        <Text style={styles.cardText}>BALIK SKWELA SY 2024-2025</Text>
-      </TouchableOpacity>
+        ))
+      ) : (
+        <Text>No announcements available.</Text>
+      )}
     </ScrollView>
   );
 };

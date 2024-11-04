@@ -1,22 +1,79 @@
-import React, { useState } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const ParentDashboard = () => {
   const navigation = useNavigation();
-
-  // State for search input and filtered announcements
   const [searchText, setSearchText] = useState('');
-  const [announcements, setAnnouncements] = useState([
-    { id: 1, text: 'WE WILL LAUNCH SOON!', image: require('../../assets/school_building.png') },
-    { id: 2, text: 'Are you ready to go back to school?', image: require('../../assets/school_kids.png') },
-    { id: 3, text: 'BALIK SKWELA SY 2024-2025', image: require('../../assets/school_building.png') },
-  ]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [parentName, setParentName] = useState('');
 
-  // Filtered announcements based on search input
+  // Fetch announcements from the backend
+  useEffect(() => {
+    axios.get('http://192.168.1.12/Capstone/api/get_announcements.php')
+      .then((response) => {
+        const sortedAnnouncements = response.data.sort((a, b) => new Date(b.posting_date) - new Date(a.posting_date));
+        setAnnouncements(sortedAnnouncements.slice(0, 3));
+      })
+      .catch((error) => console.error('Error fetching announcements:', error));
+  }, []);
+
+  // Retrieve parent name from AsyncStorage on component mount
+  useEffect(() => {
+    const fetchParentData = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+        console.log("Session raw data:", session);
+  
+        // Check if session data exists
+        if (session) {
+          const user = JSON.parse(session);
+          console.log("Parsed user session:", user);
+  
+          // Check for correct structure and role of the user
+          if (user && user.user_id && user.role === 'parent') {
+            console.log(`Using dynamic user_id: ${user.user_id} to fetch parent profile`);
+  
+            // Make the API call with the dynamic user_id
+            const response = await axios.get(`http://192.168.1.12/Capstone/api/get_profile_parent.php?user_id=${user.user_id}`);
+            const data = response.data;
+  
+            console.log("API response data:", data);
+  
+            // Check for correct data structure and parent details
+            if (data.status && data.parent) {
+              setParentName(data.parent.full_name);
+              console.log("Parent full name successfully set to:", data.parent.full_name);
+            } else {
+              console.error("API returned error or no parent data found:", data.message || "Parent profile not found.");
+              Alert.alert("Error", data.message || "Parent profile not found.");
+            }
+          } else {
+            console.error("User session is invalid or missing user_id/role for parent");
+            Alert.alert("Error", "User session not found or user ID is missing.");
+          }
+        } else {
+          console.error("No session data found in AsyncStorage");
+          Alert.alert("Error", "No session data found.");
+        }
+      } catch (error) {
+        console.error("Error fetching parent data:", error);
+        Alert.alert("Error", "Unable to fetch parent information. Please try again later.");
+      }
+    };
+  
+    fetchParentData();
+  }, []);
+  
+  
+  
+  
+
   const filteredAnnouncements = announcements.filter(announcement =>
-    announcement.text.toLowerCase().includes(searchText.toLowerCase())
+    announcement.title?.toLowerCase().includes(searchText.toLowerCase())
   );
 
   return (
@@ -31,8 +88,8 @@ const ParentDashboard = () => {
             <Icon name="cog-outline" size={25} color="#fff" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.greetingText}>Welcome, Parent Name</Text>
-        <Text style={styles.subText}>Stay updated with your child's attendance</Text>
+        <Text style={styles.greetingText}>Hi, {parentName || 'Parent'}</Text>
+        <Text style={styles.subText}>Stay updated with your child's progress</Text>
       </View>
 
       {/* Search Bar */}
@@ -88,16 +145,26 @@ const ParentDashboard = () => {
       </View>
 
       {/* Announcements Section */}
-      <View style={styles.announcementContainer}>
+      <View style={styles.announcementHeader}>
         <Text style={styles.announcementTitle}>Announcements</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('ParentAnnouncementsScreen')}>
+          <Text style={styles.viewAllText}>View All</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.announcementContainer}>
         {filteredAnnouncements.map((announcement) => (
           <TouchableOpacity
             key={announcement.id}
-            onPress={() => navigation.navigate('ParentAnnouncementsScreen')}
+            onPress={() => navigation.navigate('ParentAnnouncementDetail', {
+              title: announcement.title,
+              content: announcement.content,
+              posting_date: announcement.posting_date,
+              image: announcement.image
+            })}
             style={styles.announcementCard}
           >
-            <Image source={announcement.image} style={styles.announcementImage} />
-            <Text style={styles.announcementText}>{announcement.text}</Text>
+            <Image source={{ uri: `http://192.168.1.12/Capstone/uploads/${announcement.image}` }} style={styles.announcementImage} />
+            <Text style={styles.announcementText}>{announcement.title}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -209,14 +276,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  announcementContainer: {
-    marginTop: 10,
+  announcementHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
+    marginTop: 30,
   },
   announcementTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 10,
+  },
+  announcementContainer: {
+    marginTop: 10,
+    paddingHorizontal: 20,
   },
   announcementCard: {
     backgroundColor: '#fff',

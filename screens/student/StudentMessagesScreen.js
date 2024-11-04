@@ -1,53 +1,154 @@
-import React from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Image, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-
-const messagesData = [
-  { id: '1', name: 'Sample Message', preview: 'sample only', count: 9 },
-  { id: '2', name: 'Sample Message', preview: 'sample only', count: 0 },
-  { id: '3', name: 'Sample Message', preview: 'sample only', count: 2 },
-  { id: '4', name: 'Sample Message', preview: 'sample only', count: 0 },
-  { id: '5', name: 'Sample Message', preview: 'sample only', count: 0 },
-];
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { db } from '../../config/firebase'; // Assuming firebase.js is in config folder
+import { collection, addDoc, query, orderBy, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
 const StudentMessagesScreen = ({ navigation }) => {
+  const [messagesData, setMessagesData] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [search, setSearch] = useState('');
+
+  // Fetch conversations on component mount
+  useEffect(() => {
+    const fetchConversations = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+        const user = session ? JSON.parse(session) : null;
+
+        if (user && user.user_id) {
+          const conversationsQuery = query(
+            collection(db, `users/${user.user_id}/conversations`),
+            orderBy("lastMessageTimestamp", "desc")
+          );
+          onSnapshot(conversationsQuery, (snapshot) => {
+            const conversationsData = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            }));
+            setConversations(conversationsData);
+          });
+        } else {
+          Alert.alert("Error", "User session not found. Please log in again.");
+          navigation.replace('Login');
+        }
+      } catch (error) {
+        console.error("Error retrieving conversations:", error);
+        Alert.alert("Error", "Failed to retrieve conversations.");
+      }
+    };
+
+    fetchConversations();
+  }, []);
+
+  // Fetch messages in a selected conversation
+  const fetchMessages = (receiver_id) => {
+    const messagesQuery = query(
+      collection(db, `conversations/${receiver_id}/messages`),
+      orderBy("timestamp", "asc")
+    );
+    onSnapshot(messagesQuery, (snapshot) => {
+      const messagesData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setMessagesData(messagesData);
+    });
+    setSelectedConversation(receiver_id);
+  };
+
+  // Send a new message
+  const sendMessage = async () => {
+    try {
+      const session = await AsyncStorage.getItem('userSession');
+      const user = session ? JSON.parse(session) : null;
+
+      if (user && newMessage.trim()) {
+        const messageData = {
+          sender_id: user.user_id,
+          message_content: newMessage,
+          timestamp: new Date(),
+        };
+
+        await addDoc(collection(db, `conversations/${selectedConversation}/messages`), messageData);
+
+        // Update the last message in the conversation for preview
+        await setDoc(doc(db, `users/${user.user_id}/conversations`, selectedConversation), {
+          last_message: newMessage,
+          lastMessageTimestamp: new Date(),
+        }, { merge: true });
+
+        setNewMessage('');
+      } else {
+        Alert.alert("Error", "Please enter a message.");
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      Alert.alert("Error", "Failed to send message.");
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Title */}
-      <Text style={styles.title}>Message</Text>
-
-      {/* Search Bar */}
+      <Text style={styles.title}>Messages</Text>
       <View style={styles.searchContainer}>
         <Icon name="magnify" size={20} color="#888" />
-        <TextInput
-          placeholder="Search..."
-          placeholderTextColor="#888"
-          style={styles.searchInput}
+        <TextInput 
+          placeholder="Search..." 
+          placeholderTextColor="#888" 
+          style={styles.searchInput} 
+          value={search}
+          onChangeText={(text) => setSearch(text)}
         />
       </View>
 
-      {/* Messages List */}
+      {/* Display list of conversations */}
       <FlatList
-        data={messagesData}
+        data={conversations.filter(item => item.name.toLowerCase().includes(search.toLowerCase()))}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.messageItem}
-            onPress={() => navigation.navigate('StudentConversationScreen', { name: item.name })}
+            onPress={() => fetchMessages(item.id)}
           >
             <Image source={require('../../assets/profile_placeholder.png')} style={styles.profileImage} />
             <View style={styles.messageInfo}>
               <Text style={styles.messageName}>{item.name}</Text>
-              <Text style={styles.messagePreview}>{item.preview}</Text>
+              <Text style={styles.messagePreview}>{item.last_message}</Text>
             </View>
-            {item.count > 0 && (
-              <View style={styles.messageCount}>
-                <Text style={styles.messageCountText}>{item.count}</Text>
-              </View>
-            )}
           </TouchableOpacity>
         )}
       />
+
+      {/* Display messages for the selected conversation */}
+      {selectedConversation && (
+        <View style={styles.chatContainer}>
+          <FlatList
+            data={messagesData}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={[styles.messageBubble, item.sender_id === user.user_id ? styles.senderBubble : styles.receiverBubble]}>
+                <Text style={styles.messageText}>{item.message_content}</Text>
+              </View>
+            )}
+          />
+
+          <View style={styles.inputContainer}>
+            <TextInput
+              placeholder="Type a message"
+              value={newMessage}
+              onChangeText={setNewMessage}
+              style={styles.input}
+            />
+            <TouchableOpacity onPress={sendMessage} style={styles.sendButton}>
+              <Icon name="send" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
@@ -107,18 +208,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
   },
-  messageCount: {
-    backgroundColor: '#137e5e',
-    borderRadius: 15,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chatContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
-  messageCountText: {
+  messageBubble: {
+    padding: 10,
+    borderRadius: 10,
+    marginVertical: 5,
+    maxWidth: '75%',
+  },
+  senderBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#137e5e',
+  },
+  receiverBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#e0e0e0',
+  },
+  messageText: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#f8f8f8',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginRight: 10,
+  },
+  sendButton: {
+    backgroundColor: '#137e5e',
+    padding: 10,
+    borderRadius: 20,
   },
 });
 

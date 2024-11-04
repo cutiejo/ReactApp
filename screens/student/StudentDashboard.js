@@ -1,27 +1,68 @@
-import React, { useState } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function StudentDashboard() {
   const navigation = useNavigation();
-
-  // State for search input and filtered announcements
   const [searchText, setSearchText] = useState('');
-  const [announcements, setAnnouncements] = useState([
-    { id: 1, text: 'WE WILL LAUNCH SOON!', image: require('../../assets/school_building.png') },
-    { id: 2, text: 'Are you ready to go back to school?', image: require('../../assets/school_kids.png') },
-    { id: 3, text: 'BALIK SKWELA SY 2024-2025', image: require('../../assets/school_building.png') },
-  ]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [studentName, setStudentName] = useState('');
 
-  // Filtered announcements based on search input
+  // Fetch announcements from the backend
+  useEffect(() => {
+    fetch('http://192.168.1.12/Capstone/api/get_announcements.php')
+      .then((response) => response.json())
+      .then((data) => {
+        const sortedAnnouncements = data.sort((a, b) => new Date(b.posting_date) - new Date(a.posting_date));
+        setAnnouncements(sortedAnnouncements.slice(0, 3));
+      })
+      .catch((error) => console.error('Error fetching announcements:', error));
+  }, []);
+
+  // Retrieve student name from AsyncStorage on component mount
+  useEffect(() => {
+    const fetchStudentData = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+
+        console.log("Retrieved session from AsyncStorage:", session); // Debug log
+
+        const user = session ? JSON.parse(session) : null;
+
+        // Check if the user session and user_id are correctly set
+        if (user && user.user_id && user.role === 'student') {
+
+
+          const response = await fetch(`http://192.168.1.12/Capstone/api/get_profile.php?user_id=${user.user_id}`);
+          const data = await response.json();
+
+          if (data.status) {
+            setStudentName(data.student.full_name);
+          } else {
+            console.error("API Error:", data.message);
+            Alert.alert("Error", "Student not found in the database. Please check your profile.");
+          }
+        } else {
+          console.error("User session or user ID missing. Session data:", user);
+          Alert.alert("Error", "User session not found or user ID is missing.");
+        }
+      } catch (error) {
+        console.error('Error fetching student data:', error);
+        Alert.alert("Error", "Unable to fetch student information. Please try again later.");
+      }
+    };
+
+    fetchStudentData();
+  }, []);
+
   const filteredAnnouncements = announcements.filter(announcement =>
-    announcement.text.toLowerCase().includes(searchText.toLowerCase())
+    announcement.title?.toLowerCase().includes(searchText.toLowerCase())
   );
 
   return (
     <View style={styles.container}>
-      {/* Header Section */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={() => navigation.navigate('StudentMenuBarScreen')}>
@@ -31,11 +72,10 @@ export default function StudentDashboard() {
             <Icon name="cog-outline" size={25} color="#fff" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.greetingText}>Hi, Student Name</Text>
+        <Text style={styles.greetingText}>Hi, {studentName || 'Student'}</Text>
         <Text style={styles.subText}>Have a nice day!</Text>
       </View>
 
-      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Icon name="magnify" size={25} color="#888" />
         <TextInput
@@ -47,7 +87,6 @@ export default function StudentDashboard() {
         />
       </View>
 
-      {/* Quick Access Icons */}
       <View style={styles.quickAccessMenu}>
         <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('StudentAttendanceScreen')}>
           <View style={styles.iconBg}>
@@ -55,14 +94,12 @@ export default function StudentDashboard() {
           </View>
           <Text style={styles.iconText}>Attendance</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('StudentTimesheetScreen')}>
           <View style={styles.iconBg}>
             <Icon name="clipboard-text-outline" size={30} color="#137e5e" />
           </View>
           <Text style={styles.iconText}>Timesheet</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('StudentMenuBarScreen')}>
           <View style={styles.iconBg}>
             <Icon name="dots-horizontal" size={30} color="#137e5e" />
@@ -71,17 +108,27 @@ export default function StudentDashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* Announcement Section */}
-      <ScrollView style={styles.announcementContainer} showsVerticalScrollIndicator={false}>
+      <View style={styles.announcementHeader}>
         <Text style={styles.announcementTitle}>Announcements</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('StudentAnnouncementsScreen')}>
+          <Text style={styles.seeAllText}>See All</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.announcementContainer} showsVerticalScrollIndicator={false}>
         {filteredAnnouncements.map((announcement) => (
           <TouchableOpacity
             key={announcement.id}
-            onPress={() => navigation.navigate('StudentAnnouncementsScreen')}
+            onPress={() => navigation.navigate('StudentAnnouncementDetail', {
+              title: announcement.title,
+              content: announcement.content,
+              posting_date: announcement.posting_date,
+              image: announcement.image
+            })}
             style={styles.announcementCard}
           >
-            <Image source={announcement.image} style={styles.announcementImage} />
-            <Text style={styles.announcementText}>{announcement.text}</Text>
+            <Image source={{ uri: `http://192.168.1.12/Capstone/uploads/${announcement.image}` }} style={styles.announcementImage} />
+            <Text style={styles.announcementText}>{announcement.title}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -100,7 +147,6 @@ const styles = StyleSheet.create({
     paddingVertical: 35,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-
   },
   headerTop: {
     flexDirection: 'row',
@@ -152,14 +198,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#000',
   },
-  announcementContainer: {
-    marginTop: 30,
+  announcementHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
+    marginTop: 30,
   },
   announcementTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 10,
+  },
+  seeAllText: {
+    color: '#137e5e',
+    fontSize: 16,
+  },
+  announcementContainer: {
+    marginTop: 10,
+    paddingHorizontal: 20,
   },
   announcementCard: {
     backgroundColor: '#fff',

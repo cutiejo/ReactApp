@@ -1,15 +1,61 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, Image, Modal, Alert, StyleSheet } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const StudentSettingsScreen = ({ navigation }) => {
   const [modalVisible, setModalVisible] = useState(false);
+  const [profile, setProfile] = useState(null);
 
-  const handleLogout = () => {
-    // Implement the actual logout logic here, e.g., clearing user session data
-    setModalVisible(false);
-    // Redirect to login screen or other appropriate action
-    navigation.replace('Login');
+  // Fetch full profile, including image, on component mount
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const session = await AsyncStorage.getItem('userSession');
+        if (session) {
+          const user = JSON.parse(session);
+          if (user && user.user_id) {
+            const response = await axios.get('http://192.168.1.12/Capstone/api/get_profile.php', {
+              params: { user_id: user.user_id },
+            });
+
+            if (response.data.status) {
+              const studentData = response.data.student;
+              setProfile({
+                ...user, // Basic session details
+                ...studentData, // Complete profile data including image, if available
+              });
+            } else {
+              Alert.alert("Error", response.data.message || "Failed to retrieve profile.");
+              navigation.replace('Login');
+            }
+          } else {
+            Alert.alert("Error", "Session data incomplete. Please log in again.");
+            navigation.replace('Login');
+          }
+        } else {
+          Alert.alert("Error", "User session not found. Please log in again.");
+          navigation.replace('Login');
+        }
+      } catch (error) {
+        console.error("Error retrieving profile:", error);
+        Alert.alert("Error", "Failed to retrieve profile data.");
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await AsyncStorage.clear();
+      setModalVisible(false);
+      navigation.replace('Login');
+    } catch (error) {
+      console.error("Error logging out:", error);
+      Alert.alert("Error", "Failed to log out. Please try again.");
+    }
   };
 
   return (
@@ -18,14 +64,18 @@ const StudentSettingsScreen = ({ navigation }) => {
       <View style={styles.profileSection}>
         <TouchableOpacity onPress={() => navigation.navigate('StudentProfileScreen')}>
           <Image
-            source={require('../../assets/profile_placeholder.png')}
+            source={
+              profile && profile.image
+                ? { uri: `http://192.168.1.12/Capstone/${profile.image}` }
+                : require('../../assets/profile_placeholder.png')
+            }
             style={styles.profileImage}
           />
         </TouchableOpacity>
         <View style={styles.profileInfo}>
           <TouchableOpacity onPress={() => navigation.navigate('StudentProfileScreen')}>
-            <Text style={styles.profileName}>John Vic</Text>
-            <Text style={styles.profileEmail}>john@gmail.com</Text>
+            <Text style={styles.profileName}>{profile ? profile.full_name : 'N/A'}</Text>
+            <Text style={styles.profileEmail}>{profile ? profile.email : 'N/A'}</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('StudentEditProfileScreen')} style={styles.editProfileButton}>
@@ -38,69 +88,43 @@ const StudentSettingsScreen = ({ navigation }) => {
 
       {/* Settings Options */}
       <View style={styles.settingsContainer}>
-        <TouchableOpacity
-          style={styles.settingsItem}
-          onPress={() => navigation.navigate('StudentProfileScreen')}
-        >
+        <TouchableOpacity style={styles.settingsItem} onPress={() => navigation.navigate('StudentProfileScreen')}>
           <Icon name="account-outline" size={24} color="#137e5e" />
           <Text style={styles.settingsText}>Profile</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.settingsItem}
-          onPress={() => navigation.navigate('StudentChangePasswordScreen')}
-        >
+        <TouchableOpacity style={styles.settingsItem} onPress={() => navigation.navigate('StudentChangePasswordScreen')}>
           <Icon name="lock-outline" size={24} color="#137e5e" />
           <Text style={styles.settingsText}>Change Password</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.settingsItem}
-          onPress={() => navigation.navigate('StudentAboutScreen')}
-        >
+        <TouchableOpacity style={styles.settingsItem} onPress={() => navigation.navigate('StudentAboutScreen')}>
           <Icon name="information-outline" size={24} color="#137e5e" />
           <Text style={styles.settingsText}>About</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.settingsItem}
-          onPress={() => navigation.navigate('ParentsInformationScreen')}
-        >
+        <TouchableOpacity style={styles.settingsItem} onPress={() => navigation.navigate('ParentsInformationScreen')}>
           <Icon name="account-group-outline" size={24} color="#137e5e" />
           <Text style={styles.settingsText}>Parents Information</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.settingsItem}
-          onPress={() => setModalVisible(true)} // Show logout modal
-        >
+        <TouchableOpacity style={styles.settingsItem} onPress={() => setModalVisible(true)}>
           <Icon name="logout" size={24} color="#137e5e" />
           <Text style={styles.settingsText}>Log Out</Text>
         </TouchableOpacity>
       </View>
 
       {/* Logout Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Log out</Text>
             <Text style={styles.modalMessage}>Are you sure you want to log out?</Text>
             <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
-              >
+              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.logoutConfirmButton]}
-                onPress={handleLogout}
-              >
+              <TouchableOpacity style={[styles.button, styles.logoutConfirmButton]} onPress={handleLogout}>
                 <Text style={styles.logoutText}>Log out</Text>
               </TouchableOpacity>
             </View>
