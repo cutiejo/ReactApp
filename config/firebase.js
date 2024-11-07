@@ -1,20 +1,35 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+// Import the Firebase and Firestore functions
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc } from "firebase/firestore";
 
-
+// Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyARVlrOu1mzfjwkzZRUCw8eHGafT_sLTgs",
-  authDomain: "svmrfid.firebaseapp.com",
-  databaseURL: "https://svmrfid-default-rtdb.firebaseio.com",
-  projectId: "svmrfid",
-  storageBucket: "svmrfid.firebasestorage.app",
-  messagingSenderId: "1089576323565",
-  measurementId: "G-3PN9Y0NVJD",
-  appId: "1:1089576323565:web:b32d2b714695045065bfe4"
+  apiKey: "AIzaSyBesa9xkX61DZ-xQxsX6UEy0ZP8c7CNvms",
+  authDomain: "chat-app-b2c25.firebaseapp.com",
+  databaseURL: "https://chat-app-b2c25-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "chat-app-b2c25",
+  storageBucket: "chat-app-b2c25.firebasestorage.app",
+  messagingSenderId: "17333985878",
+  appId: "1:17333985878:web:6e83cbc7e786ba367791f7",
+  measurementId: "G-0J951CGMHY"
 };
 
-// Initialize Firebase app
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore
-export const db = getFirestore(app);
+const db = getFirestore(app);
+
+// Export Firestore instance to use in other files
+export { db };
+
+export const createUserProfile = async (userId, userInfo) => {
+  try {
+    console.log("Creating user profile with data:", JSON.stringify(userInfo));
+    const userRef = doc(db, "users", userId.toString());
+    await setDoc(userRef, userInfo);
+    console.log("User profile created successfully!");
+  } catch (error) {
+    console.error("Error creating user profile: ", error);
+  }
+};

@@ -1,256 +1,537 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Image, Alert } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, Button, ActivityIndicator, FlatList, TouchableOpacity, Image, Alert, StyleSheet } from 'react-native';
+import { db, createUserProfile } from '../../config/firebase';
+import { collection, doc, addDoc, getDoc, onSnapshot, query, where, orderBy, getDocs, setDoc, serverTimestamp, limit, updateDoc } from "firebase/firestore";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from '../../config/firebase'; // Assuming firebase.js is in config folder
-import { collection, addDoc, query, orderBy, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const StudentMessagesScreen = ({ navigation }) => {
-  const [messagesData, setMessagesData] = useState([]);
-  const [conversations, setConversations] = useState([]);
-  const [selectedConversation, setSelectedConversation] = useState(null);
-  const [newMessage, setNewMessage] = useState('');
-  const [search, setSearch] = useState('');
+export default function StudentMessagesScreen({ navigation }) {
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [searchText, setSearchText] = useState('');
+  const [friendsList, setFriendsList] = useState([]);
+  const [friendRequests, setFriendRequests] = useState([]);
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showFriendRequests, setShowFriendRequests] = useState(true);
 
-  // Fetch conversations on component mount
   useEffect(() => {
-    const fetchConversations = async () => {
-      try {
-        const session = await AsyncStorage.getItem('userSession');
-        const user = session ? JSON.parse(session) : null;
+    loadFriends();
+    loadFriendRequests();
+  }, [userId]);
 
-        if (user && user.user_id) {
-          const conversationsQuery = query(
-            collection(db, `users/${user.user_id}/conversations`),
-            orderBy("lastMessageTimestamp", "desc")
-          );
-          onSnapshot(conversationsQuery, (snapshot) => {
-            const conversationsData = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            }));
-            setConversations(conversationsData);
-          });
-        } else {
-          Alert.alert("Error", "User session not found. Please log in again.");
-          navigation.replace('Login');
+  const hideUnhide = () => {
+    setShowFriendRequests(!showFriendRequests);
+  };
+
+  const loadFriendRequests = () => {
+    if (!userId) return;
+    const friendRequestsRef = collection(db, "friendRequests");
+    console.log("userid:", userId);
+    const q = query(friendRequestsRef, where("receiverId", "==", userId.toString()), where("status", "==", "pending"));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const requests = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setFriendRequests(requests);
+      console.log("Friend requests:", requests);
+    });
+
+    return () => unsubscribe(); // Clean up the listener on unmount
+  };
+
+  const acceptFriendRequest = async (requestId, senderId, receiverId) => {
+    const friendRequestRef = doc(db, "friendRequests", requestId);
+    await updateDoc(friendRequestRef, { status: "accepted" });
+
+    const friendsRef = collection(db, "friends");
+    await setDoc(doc(friendsRef, `${senderId}_${receiverId}`), {
+      user1: senderId,
+      user2: receiverId,
+      friendshipSince: new Date()
+    });
+
+    alert("Friend request accepted!");
+    loadFriendRequests();
+    loadFriends();
+  };
+
+  const rejectFriendRequest = async (requestId) => {
+    const friendRequestRef = doc(db, "friendRequests", requestId);
+    await updateDoc(friendRequestRef, { status: "rejected" });
+    alert("Friend request rejected!");
+  };
+
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadFriends();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    const setupUserProfile = async () => {
+      try {
+        setIsLoading(true);
+        const userSession = await AsyncStorage.getItem('userSession');
+        if (userSession) {
+          const parsedSession = JSON.parse(userSession);
+          const userId = parsedSession.user_id;
+          setUserId(userId);
+
+          const userInfo = {
+            displayName: parsedSession.email,
+            email: parsedSession.email,
+            profilePicUrl: 'https://www.mgp.net.au/wp-content/uploads/2023/05/150-1503945_transparent-user-png-default-user-image-png-png.png',
+            userId: userId.toString()
+          };
+
+          await createUserProfile(userId, userInfo);
         }
       } catch (error) {
-        console.error("Error retrieving conversations:", error);
-        Alert.alert("Error", "Failed to retrieve conversations.");
+        console.error("Failed to set up user profile:", error);
+      }
+      finally {
+        setIsLoading(false);
       }
     };
 
-    fetchConversations();
+    setupUserProfile();
   }, []);
 
-  // Fetch messages in a selected conversation
-  const fetchMessages = (receiver_id) => {
-    const messagesQuery = query(
-      collection(db, `conversations/${receiver_id}/messages`),
-      orderBy("timestamp", "asc")
+  const loadFriends = () => {
+    if (!userId) return;
+    setIsLoading(true);
+    setFriendsList([]);
+
+    const friendsQuery = query(
+      collection(db, 'friendRequests'),
+      where('status', '==', 'accepted')
     );
-    onSnapshot(messagesQuery, (snapshot) => {
-      const messagesData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setMessagesData(messagesData);
+
+    const unsubscribeFriends = onSnapshot(friendsQuery, async (snapshot) => {
+      const friendsPromises = snapshot.docs.map(async (docSnapshot) => {
+        console.log("Processing friend:", docSnapshot.id);
+        const data = docSnapshot.data();
+        const friendId = data.senderId == userId ? data.receiverId : data.senderId;
+
+        const userRef = doc(db, 'users', friendId);
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.exists() ? userSnap.data() : {};
+
+        const conversationId = generateConversationId(userId, friendId);
+        const conversationRef = doc(db, 'conversations', conversationId);
+
+        const unsubscribeSeenStatus = onSnapshot(conversationRef, (conversationSnap) => {
+          const seenStatus = conversationSnap.exists() ? conversationSnap.data().seen : false;
+
+          const lastMessageQuery = query(
+            collection(db, 'conversations', conversationId, 'messages'),
+            orderBy('timestamp', 'desc'),
+            limit(1)
+          );
+
+          const unsubscribeLastMessage = onSnapshot(lastMessageQuery, (lastMessageSnapshot) => {
+            let lastMessage = {};
+            if (!lastMessageSnapshot.empty) {
+              const lastMessageData = lastMessageSnapshot.docs[0].data();
+              lastMessage = {
+                text: lastMessageData.text || "No message",
+                timestamp: lastMessageData.timestamp || 0,
+                seen: seenStatus
+              };
+            } else {
+              lastMessage = { text: "No message yet", timestamp: 0, seen: seenStatus };
+            }
+
+            setFriendsList((prevFriendsList) => {
+              const updatedFriends = prevFriendsList.filter(f => f.friendId !== friendId);
+
+              const newFriendsList = [...updatedFriends, { friendId, ...data, ...userData, lastMessage }];
+
+              newFriendsList.sort((a, b) => (b.lastMessage.timestamp?.seconds || 0) - (a.lastMessage.timestamp?.seconds || 0));
+
+              console.log("Updated and sorted friends list:", newFriendsList);
+              return newFriendsList;
+            });
+          });
+
+          return { friendId, ...data, ...userData, unsubscribeLastMessage, unsubscribeSeenStatus };
+        });
+      });
+
+      const friends = (await Promise.all(friendsPromises)).filter(Boolean);
+      setIsLoading(false);
     });
-    setSelectedConversation(receiver_id);
+
+    return () => {
+      unsubscribeFriends();
+      friendsList.forEach((friend) => {
+        if (friend.unsubscribeLastMessage) {
+          friend.unsubscribeLastMessage();
+        }
+        if (friend.unsubscribeSeenStatus) {
+          friend.unsubscribeSeenStatus();
+        }
+      });
+    };
   };
 
-  // Send a new message
-  const sendMessage = async () => {
+  const selectFriend = async (friend) => {
+    setSelectedFriend(friend);
+    const conversationId = generateConversationId(userId, friend.friendId);
+
+    const messagesQuery = query(
+      collection(db, 'conversations', conversationId, 'messages'),
+      orderBy('timestamp', 'asc')
+    );
+
     try {
-      const session = await AsyncStorage.getItem('userSession');
-      const user = session ? JSON.parse(session) : null;
-
-      if (user && newMessage.trim()) {
-        const messageData = {
-          sender_id: user.user_id,
-          message_content: newMessage,
-          timestamp: new Date(),
-        };
-
-        await addDoc(collection(db, `conversations/${selectedConversation}/messages`), messageData);
-
-        // Update the last message in the conversation for preview
-        await setDoc(doc(db, `users/${user.user_id}/conversations`, selectedConversation), {
-          last_message: newMessage,
-          lastMessageTimestamp: new Date(),
-        }, { merge: true });
-
-        setNewMessage('');
-      } else {
-        Alert.alert("Error", "Please enter a message.");
-      }
+      const snapshot = await getDocs(messagesQuery);
+      const conversationMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      markFriendAsSeen(friend);
+      navigation.navigate('StudentConversationScreen', {
+        name: friend.name,
+        selectedFriendId: friend.friendId,
+        initialMessages: conversationMessages,
+        senderId: userId,
+        conversationId: conversationId
+      });
     } catch (error) {
-      console.error('Error sending message:', error);
-      Alert.alert("Error", "Failed to send message.");
+      console.error("Error fetching messages: ", error);
     }
   };
 
+  const markFriendAsSeen = (friend) => {
+    const updatedFriendsList = friendsList.map((f) => {
+      if (f.friendId === friend.friendId) {
+        return { ...f, seen: true };
+      }
+      return f;
+    });
+
+    setFriendsList(updatedFriendsList);
+    console.log("Updated friends list:", JSON.stringify(updatedFriendsList));
+  };
+
+
+  const sendFriendRequest = async (friendId, friendName) => {
+    Alert.alert(
+      "Add Friend",
+      `Would you like to add ${friendName} as a friend?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Yes",
+          onPress: async () => {
+            try {
+              const friendRequestRef = doc(db, "friendRequests", `${userId}_${friendId}`);
+              await setDoc(friendRequestRef, {
+                senderId: userId.toString(),
+                receiverId: friendId,
+                status: "pending"
+              });
+
+              setSearchResults([]);
+              setSearchText('');
+
+              Alert.alert("Friend request sent!");
+            } catch (error) {
+              console.error("Error sending friend request: ", error);
+              Alert.alert("Failed to send friend request");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const searchUsers = async () => {
+    setIsLoading(true);
+    if (searchText.trim()) {
+      const querySnapshot = await getDocs(
+        query(collection(db, 'users'), where('email', '==', searchText.trim()))
+      );
+      const results = querySnapshot.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+      setSearchResults(results);
+      setIsLoading(false);
+    }
+  };
+
+  const generateConversationId = (uid1, uid2) => {
+    return Number(uid1) < Number(uid2) ? `${uid1}_${uid2}` : `${uid2}_${uid1}`;
+  };
+
+  const searchTextChanged = (text) => {
+    if (text === '') {
+      setSearchResults([]);
+    }
+    setSearchText(text);
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Messages</Text>
-      <View style={styles.searchContainer}>
-        <Icon name="magnify" size={20} color="#888" />
-        <TextInput 
-          placeholder="Search..." 
-          placeholderTextColor="#888" 
-          style={styles.searchInput} 
-          value={search}
-          onChangeText={(text) => setSearch(text)}
-        />
-      </View>
+    <SafeAreaView style={styles.container}>
+      {/* Friend Requests */}
+      <View style={{ marginBottom: 20 }}>
+        <TouchableOpacity onPress={hideUnhide} style={styles.toggleButton}>
+          <Text style={{ marginLeft: 8, fontSize: 18, fontWeight: 'bold' }}>Friend Requests</Text>
+          <Icon name={showFriendRequests ? "arrow-up-bold" : "arrow-down-bold"} size={24} color="#888" style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
 
-      {/* Display list of conversations */}
-      <FlatList
-        data={conversations.filter(item => item.name.toLowerCase().includes(search.toLowerCase()))}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.messageItem}
-            onPress={() => fetchMessages(item.id)}
-          >
-            <Image source={require('../../assets/profile_placeholder.png')} style={styles.profileImage} />
-            <View style={styles.messageInfo}>
-              <Text style={styles.messageName}>{item.name}</Text>
-              <Text style={styles.messagePreview}>{item.last_message}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
-
-      {/* Display messages for the selected conversation */}
-      {selectedConversation && (
-        <View style={styles.chatContainer}>
+        {showFriendRequests && friendRequests.length > 0 && (
           <FlatList
-            data={messagesData}
+            data={friendRequests}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={[styles.messageBubble, item.sender_id === user.user_id ? styles.senderBubble : styles.receiverBubble]}>
-                <Text style={styles.messageText}>{item.message_content}</Text>
+              <View style={styles.requestCard}>
+                <View style={styles.requestInfo}>
+                  <Image
+                    source={{
+                      uri: item.senderProfilePic || 'https://www.mgp.net.au/wp-content/uploads/2023/05/150-1503945_transparent-user-png-default-user-image-png-png.png'
+                    }}
+                    style={styles.requestAvatar}
+                  />
+                  <Text style={styles.requestText}>{item.senderName || item.senderId} has sent you a friend request.</Text>
+                </View>
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity onPress={() => acceptFriendRequest(item.id, item.senderId, item.receiverId)} style={styles.acceptButton}>
+                    <Text style={styles.acceptButtonText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => rejectFriendRequest(item.id)} style={styles.rejectButton}>
+                    <Text style={styles.rejectButtonText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           />
+        )}
 
-          <View style={styles.inputContainer}>
-            <TextInput
-              placeholder="Type a message"
-              value={newMessage}
-              onChangeText={setNewMessage}
-              style={styles.input}
-            />
-            <TouchableOpacity onPress={sendMessage} style={styles.sendButton}>
-              <Icon name="send" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
+        {showFriendRequests && friendRequests.length == 0 && (
+          <Text style={styles.noRequestsText}>No friend requests</Text>
+        )}
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchBar}>
+        <TextInput
+          placeholder="Search by email"
+          value={searchText}
+          onChangeText={(text) => setSearchText(text)}
+          style={styles.searchInput}
+        />
+        <TouchableOpacity onPress={() => searchUsers(searchText)}>
+          <Icon name="magnify" size={25} color="#888" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search Results */}
+      {searchResults.length > 0 ? (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Search Results</Text>
+          <FlatList
+            data={searchResults}
+            keyExtractor={(item) => item.userId}
+            renderItem={({ item }) => (
+              <TouchableOpacity onPress={() => sendFriendRequest(item.userId, item.displayName)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', padding: 10 }}>
+                  <Image source={{ uri: item.profilePicUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                  <Text style={{ marginLeft: 10 }}>{item.displayName}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={friendsList}
+          keyExtractor={(item) => item.friendId}
+          renderItem={({ item }) => {
+            //console.log("Rendering item:", item.lastMessage); // Log the item being rendered
+
+            return (
+              <TouchableOpacity onPress={() => selectFriend(item)} style={styles.friendItem}>
+                <Image source={{ uri: item.profilePicUrl }} style={styles.friendAvatar} />
+                <View>
+                  <Text style={styles.friendName}>{item.email}</Text>
+                  <Text
+                    style={[
+                      styles.lastMessage,
+                      item.lastMessage?.seen == false ? styles.unseenMessage : {}
+                    ]}
+                  >
+                    {item.lastMessage?.text}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        />
+
+      )}
+
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#0000ff" />
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
-    paddingHorizontal: 20,
+    padding: 20,
+    backgroundColor: '#fff',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#3b3b3b',
-    textAlign: 'center',
-    marginVertical: 50,
-  },
-  searchContainer: {
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    marginBottom: 20,
-    borderColor: '#d3d3d3',
+    borderColor: 'gray',
     borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    marginBottom: 10,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 10,
+    paddingVertical: 8,
     fontSize: 16,
-    color: '#000',
   },
-  messageItem: {
+  friendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
+    paddingVertical: 10,
+    borderBottomColor: '#eee',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
-  profileImage: {
+  friendAvatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    marginRight: 15,
+    marginRight: 10,
   },
-  messageInfo: {
-    flex: 1,
-  },
-  messageName: {
+  friendName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: 'bold',
   },
-  messagePreview: {
-    fontSize: 14,
-    color: '#888',
+  lastMessage: {
+    color: 'gray',
   },
-  chatContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
+  unseenMessage: {
+    fontWeight: 'bold',
+    color: 'black',
   },
-  messageBubble: {
-    padding: 10,
-    borderRadius: 10,
-    marginVertical: 5,
-    maxWidth: '75%',
-  },
-  senderBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#137e5e',
-  },
-  receiverBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#e0e0e0',
-  },
-  messageText: {
-    color: '#fff',
-  },
-  inputContainer: {
+  messageInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
+    borderTopColor: '#eee',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    backgroundColor: '#f8f8f8',
   },
-  input: {
+  messageInput: {
     flex: 1,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 20,
-    paddingHorizontal: 15,
     paddingVertical: 10,
-    fontSize: 16,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
     marginRight: 10,
   },
   sendButton: {
-    backgroundColor: '#137e5e',
+    backgroundColor: '#0084ff',
     padding: 10,
     borderRadius: 20,
   },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  toggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  requestCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  requestInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  requestAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  requestText: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
+    fontWeight: '500',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+  },
+  acceptButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginRight: 5,
+  },
+  acceptButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  rejectButton: {
+    backgroundColor: '#f44336',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  rejectButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  noRequestsText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 10,
+  },
 });
-
-export default StudentMessagesScreen;

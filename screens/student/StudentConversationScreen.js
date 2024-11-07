@@ -1,51 +1,94 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Alert, BackHandler } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import axios from 'axios';
+import { db } from '../../config/firebase';
+import { collection, doc, setDoc, addDoc, query, orderBy, onSnapshot, updateDoc } from 'firebase/firestore';
+import { useFocusEffect } from '@react-navigation/native';
 
 const StudentConversationScreen = ({ route }) => {
-  const { name } = route.params; // name of the person in the conversation
+  const { name, selectedFriendId, initialMessages, senderId, conversationId } = route.params;
   const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(initialMessages || []);
+  let unsubscribe;
 
-  // Fetch conversation messages on component mount or when the 'name' changes
   useEffect(() => {
-    const fetchConversation = async () => {
-      try {
-        const response = await axios.get('http://192.168.1.12/Capstone/api/conversation.php', {
-          params: { name },
-        });
-        setMessages(response.data.messages || []);
-      } catch (error) {
-        console.error('Error fetching conversation:', error);
-      }
+    const messagesQuery = query(
+      collection(db, 'conversations', conversationId, 'messages'),
+      orderBy('timestamp', 'asc')
+    );
+
+    unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+      const conversationMessages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setMessages(conversationMessages);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
     };
+  }, [conversationId]);
 
-    fetchConversation();
-  }, [name]);
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        navigation.pop();
+        return true;
+      };
 
-  // Function to handle sending a new message
+      const conversationRef = doc(db, "conversations", conversationId);
+      updateDoc(conversationRef, { seen: true });
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => backHandler.remove();
+    }, [])
+  );
+
   const handleSend = async () => {
-    if (inputText.trim()) {
+    const messageContent = inputText.trim();
+    if (messageContent && selectedFriendId) {
+      var message = inputText;
+      setInputText('');
+      const messagesRef = collection(db, 'conversations', conversationId, 'messages');
+
       const newMessage = {
-        text: inputText,
+        senderId,
+        senderEmail: '',
+        senderProfilePicUrl: 'https://www.mgp.net.au/wp-content/uploads/2023/05/150-1503945_transparent-user-png-default-user-image-png-png.png',
+        text: messageContent,
+        timestamp: new Date(),
         isSender: true,
       };
 
       try {
-        // Send message to the backend
-        await axios.post('http://192.168.1.12/Capstone/api/conversation.php', {
-          name,
-          text: inputText,
-          is_sender: 1, // 1 indicates the message is from the sender
-        });
+        await addDoc(messagesRef, newMessage);
 
-        // Update the messages list to display the new message
         setMessages([...messages, newMessage]);
-        setInputText(''); // Clear the input field
+
+        updateOrCreateConversation(conversationId, messageContent);
       } catch (error) {
         console.error('Error sending message:', error);
+        Alert.alert('Error', 'Failed to send message');
       }
+    } else {
+      Alert.alert("Error", "Please select a user to chat with and enter a message.");
+    }
+  };
+
+  const updateOrCreateConversation = async (conversationId, lastMessage) => {
+    const conversationRef = doc(db, 'conversations', conversationId);
+    const conversationData = {
+      userIds: [senderId, selectedFriendId],
+      lastMessage: lastMessage,
+      lastTimestamp: Date.now(),
+      seen: false,
+    };
+
+    try {
+      await setDoc(conversationRef, conversationData, { merge: true });
+    } catch (error) {
+      console.error('Error updating conversation:', error);
     }
   };
 
@@ -53,11 +96,10 @@ const StudentConversationScreen = ({ route }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
     >
       <Text style={styles.title}>{name}</Text>
-      
-      {/* List of messages */}
+
       <FlatList
         data={messages}
         keyExtractor={(item, index) => index.toString()}
@@ -69,8 +111,7 @@ const StudentConversationScreen = ({ route }) => {
           </View>
         )}
       />
-      
-      {/* Input and Send Button */}
+
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
@@ -82,6 +123,7 @@ const StudentConversationScreen = ({ route }) => {
           <Icon name="send" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+      {Platform.OS == 'ios' && <View style={{ height: 20 }} />}
     </KeyboardAvoidingView>
   );
 };

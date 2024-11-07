@@ -27,7 +27,7 @@ export default function LoginScreen() {
 
     try {
       // Send login request
-      const response = await fetch('http://192.168.1.12/Capstone/api/login.php', {
+      const response = await fetch('http://192.168.1.2:8080/WEB_APP/Capstone/api/login.php', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -39,19 +39,19 @@ export default function LoginScreen() {
         }),
       });
 
+      console.log(response);
       const data = await response.json();
-
       if (data.status) {
-              // Save session data in AsyncStorage
-              await AsyncStorage.setItem('userSession', JSON.stringify({
-                user_id: data.user.id,
-                full_name: data.user.full_name,
-                email: data.user.email,
-                role: userType.toLowerCase(), // Either 'student' or 'parent'
-              }));
+        // Save session data in AsyncStorage
+        await AsyncStorage.setItem('userSession', JSON.stringify({
+          user_id: data.user.id,
+          full_name: data.user.full_name,
+          email: data.user.email,
+          role: userType.toLowerCase(), // Either 'student' or 'parent's
+        }));
 
         Alert.alert('Login Successful', data.message);
-
+        console.log(navigation.getState().routes);
         // Navigate based on user role
         if (data.user.role === 'student') {
           navigation.replace('StudentStack');
@@ -62,16 +62,17 @@ export default function LoginScreen() {
         Alert.alert('Login Failed', data.message);
       }
     } catch (error) {
+      // Handle login error
       Alert.alert("Error", "Unable to login. Please try again later.");
       console.error("Login Error:", error);
     }
   };
 
   const handleLogout = async () => {
-      // Clear session data on logout
-      await AsyncStorage.removeItem('userSession');
-      navigation.replace('Login'); // Navigate to login screen after logout
-    };
+    // Clear session data on logout
+    await AsyncStorage.removeItem('userSession');
+    navigation.replace('Login'); // Navigate to login screen after logout
+  };
 
   const handleForgotPassword = () => {
     navigation.navigate('ForgotPassword');
